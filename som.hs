@@ -58,6 +58,17 @@ distanceBetweenColors (Color ra ga ba) (Color rb gb bb) = sqrt ( (ra - rb) * (ra
 
 -----------------------------------------------------------------------------------------------------------------
 
+closestNode :: Color -> Node Color -> Node Color -> Node Color
+closestNode c (Node xa ya ca) (Node xb yb cb) = if (distanceBetweenColors c ca) > (distanceBetweenColors c cb)
+	                                            then (Node xb yb cb)
+	                                            else (Node xa ya ca)
+
+findBmi :: Color -> [Node Color] -> Node Color
+findBmi c [] = (Node 0 0 c)
+findBmi c network =
+	foldl1 (closestNode c) network
+
+		                                              
 -- Apply one iteration of the SOM algorithm 
 -- Args: Network of node color (for the moment)
 --		 inputs :: [Color] is the learning set of the network	
@@ -67,7 +78,12 @@ distanceBetweenColors (Color ra ga ba) (Color rb gb bb) = sqrt ( (ra - rb) * (ra
 epoch :: [Node Color] -> [Color] -> StdGen -> [Double] -> ([Node Color], StdGen)
 epoch [] _ gen _ = ([], gen)
 epoch _ [] gen _ = ([], gen)
-epoch network inputs gen s = (network, gen)
+epoch network inputs gen s =
+	let
+	    randomColor = (Color 0 0 0)
+	    bmi = findBmi randomColor network
+	in (network, gen)
+
 
 main = do
 	initial_value_string <- getLine
