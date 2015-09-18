@@ -5,10 +5,10 @@ iters :: Double
 iters = 100
 
 networkWidth :: Double
-networkWidth = 5
+networkWidth = 3
 
 networkHeight :: Double
-networkHeight = 5
+networkHeight = 3
 
 mapRadius :: Double
 mapRadius = 0.5 * (max networkWidth networkHeight)
@@ -43,6 +43,10 @@ data Node a = Node { x :: Double
 -- Distance between nodes (geometric with x and y) - a does not matter here
 distanceBetweenNodes :: Node a -> Node a -> Double
 distanceBetweenNodes (Node xa ya _) (Node xb yb _) = sqrt ( (xa - xb) * (xa - xb) + (ya - yb) * (ya - yb))
+
+-- Save some resources
+distanceSquareBetweenNodes :: Node a -> Node a -> Double
+distanceSquareBetweenNodes (Node xa ya _) (Node xb yb _) =  (xa - xb) * (xa - xb) + (ya - yb) * (ya - yb)
  
 
 -----------------------------------------------------------------------------------------------------------------
@@ -53,8 +57,34 @@ data Color = Color { r :: Double
                    , b :: Double}
                    deriving (Eq, Ord, Show, Read)
 
+(<+>) :: Color -> Color -> Color
+(<+>) (Color ra ga ba) (Color rb gb bb) = (Color (ra + rb) (ga + gb) (ba + bb))
+
+(<->) :: Color -> Color -> Color
+(<->) (Color ra ga ba) (Color rb gb bb) = (Color (ra - rb) (ga - gb) (ba - bb))
+
+multColorByScalar :: Color -> Double -> Color
+multColorByScalar (Color r g b) scalar = (Color (r*scalar) (g*scalar) (b*scalar))
+
 distanceBetweenColors :: Color -> Color -> Double
 distanceBetweenColors (Color ra ga ba) (Color rb gb bb) = sqrt ( (ra - rb) * (ra - rb) + (ga - gb) * (ga - gb) + (ba - bb) * (ba - bb))
+
+--Give back a random color and a new random generator
+randomColor :: StdGen -> (Color, StdGen)
+randomColor gen = 
+	let
+	    (r, newGen) = randomR (0, 255) gen
+	    (g, newGen') = randomR (0, 255) newGen
+	    (b, newGen'') = randomR (0, 255) newGen'
+	in ((Color r g b), newGen'')
+
+-- Many random colors yay
+randomColors :: Double -> StdGen -> ([Color], StdGen)
+randomColors 0 gen = ([], gen) 
+randomColors n gen =
+	let (color, newGen) = randomColor gen
+	    (colors, newGen') = randomColors (n - 1) newGen
+	in (color : colors, newGen')
 
 -----------------------------------------------------------------------------------------------------------------
 
@@ -68,6 +98,24 @@ findBmi c [] = (Node 0 0 c)
 findBmi c network =
 	foldl1 (closestNode c) network
 
+-- Find the neighbour of a node
+-- first Node is the bmi, second is the node to test
+-- Third argument is the iteration number. Neighbourhood shrinks over time
+isInNeighbourhood :: (Node a) -> (Node a) -> Double -> Bool
+isInNeighbourhood bmi node s = (distanceBetweenNodes bmi node) * (distanceBetweenNodes bmi node) < neighbourhood * neighbourhood
+	                        where neighbourhood = decay_function mapRadius s
+
+-- Change the weight of a node 
+-- node :: Node a is the node we want to change
+-- bmi :: Node a is the closer node to the input
+-- input :: a is the input we want to get closer to
+-- s :: Double is the current iteration
+-- Return the new node
+adjustWeight :: Node Color -> Node Color -> Color -> Double -> Node Color
+adjustWeight node bmi input s = (Node (x node) (y node) (computeWeight (weights node) (distanceSquareBetweenNodes node bmi) s input))
+
+computeWeight :: Color -> Double -> Double -> Color -> Color
+computeWeight w dsquare iter input = w <+> (multColorByScalar ( input <-> w) ((decay_function learningRate iter) * ( exp ( - dsquare / ( 2 * mapRadius * mapRadius)) )))
 		                                              
 -- Apply one iteration of the SOM algorithm 
 -- Args: Network of node color (for the moment)
@@ -75,15 +123,23 @@ findBmi c network =
 --       gen :: StdGen is necessary for picking a random vector in the inputs list
 --       s :: Double : current interation
 -- Return the network after one iteration and a new random generator.	 
-epoch :: [Node Color] -> [Color] -> StdGen -> [Double] -> ([Node Color], StdGen)
+epoch :: [Node Color] -> [Color] -> StdGen -> Double -> ([Node Color], StdGen)
 epoch [] _ gen _ = ([], gen)
 epoch _ [] gen _ = ([], gen)
 epoch network inputs gen s =
 	let
-	    randomColor = (Color 0 0 0)
-	    bmi = findBmi randomColor network
-	in (network, gen)
+	    (random_index, newGen) = randomR (0, (length inputs) - 1) gen
+	    random_color = inputs !! random_index
+	    bmi = findBmi random_color network
+	    new_network = map (\node -> if (isInNeighbourhood bmi node s) then (adjustWeight node bmi random_color s) else node) network
+	in (new_network, newGen)
 
+-- -----------------------------------------------------------------------------------------------------------------------------------------
+-- get a network with random values
+getNetwork :: StdGen -> ([Node Color], StdGen)
+getNetwork gen = 
+	let (colors, newGen) = randomColors (networkHeight * networkWidth) gen
+	in ([(Node x y (colors !! index)) | x <- [1..networkWidth], y <- [1..networkHeight], let index = truncate (x*(y-1) + x - 1)], newGen)
 
 main = do
 	initial_value_string <- getLine
