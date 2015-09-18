@@ -1,17 +1,19 @@
 import System.Random
+import ExtractImage
+import Codec.Picture
 
 -- Some constants
 iters :: Double
-iters = 100
+iters = 10000
 
 networkWidth :: Double
-networkWidth = 3
+networkWidth = 4
 
 networkHeight :: Double
-networkHeight = 3
+networkHeight = 4
 
 mapRadius :: Double
-mapRadius = 0.5 * (max networkWidth networkHeight)
+mapRadius = 0.8 * (max networkWidth networkHeight)
 
 learningRate :: Double
 learningRate = 0.1
@@ -141,8 +143,32 @@ getNetwork gen =
 	let (colors, newGen) = randomColors (networkHeight * networkWidth) gen
 	in ([(Node x y (colors !! index)) | x <- [1..networkWidth], y <- [1..networkHeight], let index = truncate (x*(y-1) + x - 1)], newGen)
 
+-- Create input array from triplet of double
+createInputColors :: [(Double, Double, Double)] -> [Color]
+createInputColors doubles = map toColor doubles
+    where toColor :: (Double, Double, Double) -> Color
+          toColor (r, g, b) = (Color r g b)
+
+
+launchAlgo :: [Color] -> IO [Node Color]
+launchAlgo [] = return []
+launchAlgo inputs = do
+	gen <- getStdGen
+	let (network, new_gen) = getNetwork gen
+	go 1 inputs network new_gen
+	where
+		go s inputs network gen | s < iters = let (new_network, newGen) = epoch network inputs gen s in go (s+1) inputs new_network newGen
+		                        | otherwise = return network
+
+
+displayColor :: Node Color -> (Double, Double, Double)
+displayColor (Node _ _ c) = (r c, g c, b c)
+
 main = do
-	initial_value_string <- getLine
-	let initial_value = read initial_value_string :: Double
-	    decay_values = map (decay_function initial_value) [1..iters]
-	mapM_ (putStrLn . show) decay_values
+	fp <- getLine
+	result <- getColors fp
+	let colors = createInputColors $ getColorsBack result
+	network <- launchAlgo colors
+	--mapM (putStrLn . show . displayColor) network
+	--putStrLn (show $ length network)
+	imageCreator "lol.png" (map displayColor network)
